@@ -1,0 +1,49 @@
+########################################
+# 先设置几何参数（必须带单位）
+/mydet/detectorRadius 20 cm
+/mydet/sourceDetectorDistance 1 m
+
+
+/run/initialize
+########################################
+# 修改粒子源
+/mydet/setSource Cs137
+########################################
+#打开可视化界面
+/vis/open OGLS 600x600-0+0`
+# 关闭自动更新
+/vis/viewer/set/autoRefresh false
+# 输出类型
+/vis/verbose errors
+/vis/verbose warnings
+# 画出世界
+/vis/drawVolume
+# 观看视角
+/vis/viewer/set/viewpointThetaPhi 105 165 deg
+# 平滑
+/vis/scene/add/trajectories smooth
+/vis/modeling/trajectories/create/drawByCharge
+/vis/modeling/trajectories/drawByCharge-0/default/setDrawStepPts true
+/vis/modeling/trajectories/drawByCharge-0/default/setStepPtsSize 2
+# 展示事件
+/vis/ogl/set/displayListLimit 10000000
+/vis/scene/endOfEventAction accumulate -1
+# 更新
+/vis/viewer/set/autoRefresh true
+# 额外添加坐标轴
+/vis/scene/add/scale   # Simple scale line
+#/vis/scene/add/axes    # Simple axes: x=red, y=green, z=blue.
+#/vis/scene/add/eventID # Drawn at end of event
+#/vis/scene/add/date    # Date stamp
+
+
+
+
+########################################
+# 设置事件数，开始运行
+/run/beamOn 1
+########################################
+
+
+
+
