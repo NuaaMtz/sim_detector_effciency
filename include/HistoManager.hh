@@ -1,11 +1,12 @@
 #pragma once 
 #include <G4Types.hh>
 #include <globals.hh>
+#include "DEConstruction.hh"
 
 class HistoManager{
 
     public:
-        HistoManager(G4String);
+        HistoManager(G4String,DEConstruction*);
         ~HistoManager();
         void Book();// 在这里创建文件
         void Save();// 在这里写入文件
@@ -15,5 +16,6 @@ class HistoManager{
     private:
         G4String ffilename;
         G4bool fFactoryOn;
+        DEConstruction* fconstruction;
     
 };

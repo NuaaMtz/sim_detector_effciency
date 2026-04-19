@@ -16,7 +16,7 @@ InitializationAction::~InitializationAction() {}
 void InitializationAction::BuildForMaster() const {
   // 主线程需要创建文件，也需要runaction
   // SetUserAction(new RunAction())
-  HistoManager *mainhisto = new HistoManager("myfilename");
+  HistoManager *mainhisto = new HistoManager("myfilename",fdetector);
   PrimaryGeneration *mainPrimary = new PrimaryGeneration(fdetector);
   SetUserAction(new RunAction(mainPrimary, mainhisto));
 
@@ -25,7 +25,7 @@ void InitializationAction::BuildForMaster() const {
 void InitializationAction::Build() const {
   PrimaryGeneration *workprimary = new PrimaryGeneration(fdetector);
   HistoManager *workhisto =
-      new HistoManager("myfilename"); // 要和主线程一致，不然无法合并
+      new HistoManager("myfilename",fdetector); // 要和主线程一致，不然无法合并
   RunAction *runAction = new RunAction(workprimary, workhisto);
   EventsAction *eventAction = new EventsAction(workhisto);
 

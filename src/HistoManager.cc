@@ -3,7 +3,7 @@
 #include <g4root_defs.hh>
 
 
-HistoManager::HistoManager(G4String filename ):ffilename(filename),fFactoryOn(false){
+HistoManager::HistoManager(G4String filename,DEConstruction* construction ):ffilename(filename),fFactoryOn(false),fconstruction(construction){
 
 }
 
@@ -18,7 +18,16 @@ void HistoManager::Book(){
     analysisManager->SetNtupleMerging(true);// 自动合并
 
     // 创建文件
-    analysisManager->OpenFile(ffilename+".root");
+    // 文件名要和探测器挂钩
+    G4double radius=fconstruction->GetNaIRadius();
+    G4double poz_z=fconstruction->GetNaIPositionZ();
+    // analysisManager->OpenFile(ffilename+".root");
+    analysisManager->OpenFile(ffilename + 
+                          "_R" + std::to_string(radius).replace(
+                              std::to_string(radius).find('.'), 1, "p") +
+                          "_Z" + std::to_string(poz_z).replace(
+                              std::to_string(poz_z).find('.'), 1, "p") + 
+                          ".root");
 
     // 创建结构
     analysisManager->CreateNtuple("tree_save_evnets_energy", "deposite energy at event level");
