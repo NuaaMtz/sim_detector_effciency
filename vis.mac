@@ -1,13 +1,13 @@
 ########################################
 # 先设置几何参数（必须带单位）
 /mydet/detectorRadius 20 cm
-/mydet/sourceDetectorDistance 1 m
+/mydet/sourceDetectorDistance 0.3 m
 
 
 /run/initialize
 ########################################
 # 修改粒子源
-/mydet/setSource Cs137
+/mydet/setSource XrayTube
 ########################################
 #打开可视化界面
 /vis/open OGLS 600x600-0+0`

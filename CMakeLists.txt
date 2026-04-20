@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(USE_GEANT4 "Enable Geant4 support" ON)
-option(USE_ROOT   "Enable ROOT support" FALSE)
+option(USE_ROOT   "Enable ROOT support" ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -15,11 +15,17 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Optional user-provided install dirs
-# set(ROOT_DIR "/home/mtzmo/sofeware/root/install/root")
+set(ROOT_DIR "/home/mtzmo/sofeware/root_install")
 set(Geant4_DIR "/home/mtz/sofeware/geant4/geant4-mt-install/lib/Geant4-10.6.2")
 
 if(USE_ROOT)
-  find_package(ROOT REQUIRED COMPONENTS RIO Net Hist Tree)
+  # Prefer user-provided ROOT path, then fall back to default search paths.
+  find_package(ROOT QUIET COMPONENTS RIO Net Hist Tree
+               PATHS "${ROOT_DIR}"
+               NO_DEFAULT_PATH)
+  if(NOT ROOT_FOUND)
+    find_package(ROOT REQUIRED COMPONENTS RIO Net Hist Tree)
+  endif()
   if(DEFINED ROOT_USE_FILE)
     include(${ROOT_USE_FILE}) # compatibility with older ROOT CMake config
   endif()
@@ -27,7 +33,13 @@ if(USE_ROOT)
 endif()
 
 if(USE_GEANT4)
-  find_package(Geant4 REQUIRED vis_all ui_all )
+  # Prefer user-provided Geant4 path, then fall back to default search paths.
+  find_package(Geant4 QUIET COMPONENTS vis_all ui_all
+               PATHS "${Geant4_DIR}"
+               NO_DEFAULT_PATH)
+  if(NOT Geant4_FOUND)
+    find_package(Geant4 REQUIRED vis_all ui_all )
+  endif()
   include(${Geant4_USE_FILE})
   message(STATUS "Found Geant4 ${Geant4_VERSION}")
 endif()

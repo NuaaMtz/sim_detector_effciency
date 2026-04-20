@@ -2,7 +2,11 @@
 #include <G4VPhysicalVolume.hh>
 #include <G4VUserDetectorConstruction.hh>
 
-DEConstruction::DEConstruction() : G4VUserDetectorConstruction(),radius(30*cm),pos_z(0.5*m) {}
+DEConstruction::DEConstruction()
+    : G4VUserDetectorConstruction(), f_logical_sd_NaI(nullptr),
+      f_physical_sd_NaI(nullptr), f_logical_target_W(nullptr),
+      f_physical_target_W(nullptr), radius(30 * cm), pos_z(0.5 * m),
+      targetRadius(1.0 * cm), fEnableTargetW(true) {}
 
 DEConstruction::~DEConstruction() {}
 
@@ -26,6 +30,20 @@ G4VPhysicalVolume *DEConstruction::Construct() {
       new G4LogicalVolume(solidWorld, world_mat, "World");
   G4VPhysicalVolume *physWorld =
       new G4PVPlacement(0, G4ThreeVector(), logicWorld, "World", 0, false, 0);
+
+  if (fEnableTargetW) {
+    // XrayTube 模式下才放置钨靶
+    G4Material *targetW = nist->FindOrBuildMaterial("G4_W");
+    G4Sphere *solidTargetW = new G4Sphere("Target_W", 0., targetRadius, 0. * deg,
+                                          360. * deg, 0. * deg, 180. * deg);
+    f_logical_target_W = new G4LogicalVolume(solidTargetW, targetW, "Target_W");
+    f_physical_target_W = new G4PVPlacement(
+        nullptr, G4ThreeVector(0, 0, 0), f_logical_target_W, "Target_W",
+        logicWorld, false, 0);
+  } else {
+    f_logical_target_W = nullptr;
+    f_physical_target_W = nullptr;
+  }
 
   Define_NaI_Detector();
 

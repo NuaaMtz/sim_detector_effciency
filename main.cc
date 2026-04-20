@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
   G4RunManager *runManager = new G4RunManager;
 #endif
   // 手动限制线程
-  int thread = 2;
+  int thread = 32;
   runManager->SetNumberOfThreads(thread);
 
   DEConstruction *detector = new DEConstruction();

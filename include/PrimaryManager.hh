@@ -4,6 +4,7 @@
 #include <G4UImessenger.hh>
 #include "PrimaryGeneration.hh"
 #include "G4UIcmdWithAString.hh"
+#include "G4UIcmdWithADoubleAndUnit.hh"
 class PrimaryManager: public G4UImessenger{
 
     public:
@@ -18,5 +19,10 @@ class PrimaryManager: public G4UImessenger{
         PrimaryGeneration* fPrimaryGeneration;
 
         G4UIcmdWithAString* fNameOfSource;
+        G4UIcmdWithAString* fSpectrumRootFileCmd;
+        G4UIcmdWithAString* fSpectrumTreeCmd;
+        G4UIcmdWithAString* fSpectrumBranchCmd;
+        G4UIcmdWithADoubleAndUnit* fSpectrumMinEnergyCmd;
+        G4UIcmdWithADoubleAndUnit* fSpectrumMaxEnergyCmd;
 
 };

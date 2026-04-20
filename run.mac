@@ -7,9 +7,18 @@
 /run/initialize
 ########################################
 # 修改粒子源
-/mydet/setSource Cs137
+# /mydet/setSource XrayTube
+# /mydet/setSource RootSpectrum
+# /mydet/setSpectrumRootFile all.root
+# /mydet/setSpectrumTree tree_save_steps_energy
+# /mydet/setSpectrumBranch energt
+# /mydet/setSpectrumMinEnergy 500 keV
+# /mydet/setSpectrumMaxEnergy 700 keV
+
+
+# /mydet/setSource XrayTube
 
 ########################################
 # 设置事件数，开始运行
-/run/beamOn 1000000
+/run/beamOn 100000000
 ########################################

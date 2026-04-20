@@ -33,6 +33,9 @@ void SetNaIPositionZ(G4double z) { pos_z = z; }
 
 G4double GetNaIRadius()const { return radius;}
 G4double GetNaIPositionZ() const {return pos_z;}
+void SetEnableTargetW(G4bool enable) { fEnableTargetW = enable; }
+G4bool GetEnableTargetW() const { return fEnableTargetW; }
+G4double GetTargetRadius() const { return targetRadius; }
 
 
 
@@ -44,6 +47,14 @@ G4double GetNaIPositionZ() const {return pos_z;}
 private:
   G4LogicalVolume* f_logical_sd_NaI;
   G4VPhysicalVolume* f_physical_sd_NaI;
+  G4LogicalVolume* f_logical_target_W;
+  G4VPhysicalVolume* f_physical_target_W;
   G4double radius ;
   G4double pos_z;
+  G4double targetRadius;
+  G4bool fEnableTargetW;
+
+public:
+  G4LogicalVolume* GetLogicalTargetW() const { return f_logical_target_W; }
+  G4VPhysicalVolume* GetPhysicalTargetW() const { return f_physical_target_W; }
 };
