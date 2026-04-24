@@ -12,6 +12,8 @@ FIT_EMAX_MEV = 7.5
 DATA_UNIT = "MeV"
 STEP_TREE_NAME = "tree_save_evnets_energy"
 STEP_BRANCH_NAME = "energy"
+MIN_TEMPLATE_SUPPORT_PER_BIN = 20.0
+MIN_BINS_ALLOWED = 12
 
 
 def add_local_dependency_paths(project_root: Path) -> None:
@@ -166,8 +168,243 @@ def build_argparser():
         default="input/all.root",
         help="Data ROOT path relative to project root (default: input/all.root).",
     )
+    parser.add_argument(
+        "--min-template-support",
+        type=float,
+        default=MIN_TEMPLATE_SUPPORT_PER_BIN,
+        help="Minimum total template counts per bin; bins will be reduced if below this support.",
+    )
+    parser.add_argument(
+        "--min-bins",
+        type=int,
+        default=MIN_BINS_ALLOWED,
+        help="Lower bound for adaptive bin reduction.",
+    )
+    parser.add_argument(
+        "--validate-profile",
+        action="store_true",
+        help="Run profile-likelihood validation (slower), similar to TemplateFitter example.",
+    )
+    parser.add_argument(
+        "--profile-points",
+        type=int,
+        default=40,
+        help="Number of profile points when --validate-profile is enabled.",
+    )
+    parser.add_argument(
+        "--profile-sigma",
+        type=float,
+        default=2.0,
+        help="Profile scan width in sigma when --validate-profile is enabled.",
+    )
+    parser.add_argument(
+        "--profile-cpu",
+        type=int,
+        default=4,
+        help="CPU workers for profile scan.",
+    )
+    parser.add_argument(
+        "--toy-pull",
+        action="store_true",
+        help="Run toy-study pull validation for the first process.",
+    )
+    parser.add_argument(
+        "--toy-nexp",
+        type=int,
+        default=100,
+        help="Number of toy experiments for pull validation.",
+    )
+    parser.add_argument(
+        "--toy-max-tries",
+        type=int,
+        default=10,
+        help="Maximum retries per toy experiment.",
+    )
+    parser.add_argument(
+        "--pull-png",
+        default="fit_pull_hist.png",
+        help="Output PNG filename for pull histogram.",
+    )
     parser.add_argument("--csv-out", default="fit_yield_table.csv", help="Output CSV filename.")
     return parser
+
+
+def pick_stable_bin_count(template_arrays, fit_range, initial_bins, min_support, min_bins):
+    import numpy as np
+
+    bins = int(initial_bins)
+    min_bins = max(4, int(min_bins))
+    while True:
+        edges = np.linspace(fit_range[0], fit_range[1], bins + 1)
+        support = np.zeros(bins, dtype=float)
+        for arr in template_arrays:
+            c, _ = np.histogram(arr, bins=edges)
+            support += c.astype(float)
+        # 允许少量低统计 bin，但不能大面积空洞
+        low_support_frac = float((support < min_support).sum()) / float(len(support))
+        if low_support_frac <= 0.05 or bins <= min_bins:
+            return bins, support, low_support_frac
+        next_bins = max(min_bins, bins // 2)
+        if next_bins == bins:
+            return bins, support, low_support_frac
+        bins = next_bins
+
+
+def draw_plots_with_root(
+    bin_edges,
+    data_counts,
+    model_total,
+    component_scaled_counts,
+    processes,
+    process_labels,
+    fitted_yields,
+    data_label,
+    out_stack_png,
+    out_comp_png,
+):
+    import ROOT
+    import numpy as np
+
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    nbins = len(bin_edges) - 1
+    xlow = float(bin_edges[0])
+    xhigh = float(bin_edges[-1])
+    centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    def make_hist(name, title):
+        h = ROOT.TH1D(name, title, nbins, xlow, xhigh)
+        h.SetDirectory(0)
+        return h
+
+    # Build histograms
+    h_data = make_hist("h_data", "")
+    h_model = make_hist("h_model", "")
+    comp_hists = []
+
+    for i, y in enumerate(data_counts, start=1):
+        h_data.SetBinContent(i, float(y))
+    for i, y in enumerate(model_total, start=1):
+        h_model.SetBinContent(i, float(y))
+
+    root_colors = [
+        ROOT.kAzure + 1,
+        ROOT.kOrange + 7,
+        ROOT.kGreen + 2,
+        ROOT.kMagenta + 1,
+        ROOT.kCyan + 1,
+        ROOT.kRed + 1,
+        ROOT.kViolet + 6,
+        ROOT.kTeal + 3,
+        ROOT.kPink + 6,
+        ROOT.kSpring + 5,
+    ]
+
+    for idx, (proc, label) in enumerate(zip(processes, process_labels)):
+        h = make_hist(f"h_comp_{proc}", "")
+        vals = component_scaled_counts[proc]
+        for i, v in enumerate(vals, start=1):
+            h.SetBinContent(i, float(v))
+        c = root_colors[idx % len(root_colors)]
+        h.SetFillColorAlpha(c, 0.45)
+        h.SetLineColor(c)
+        h.SetLineWidth(1)
+        h.SetTitle(f"{label} (a={fitted_yields[proc]:.2f})")
+        comp_hists.append((proc, label, h, c))
+
+    h_data.SetLineColor(ROOT.kBlack)
+    h_data.SetLineWidth(2)
+    h_data.SetMarkerStyle(20)
+    h_data.SetMarkerSize(0.8)
+    h_data.SetMarkerColor(ROOT.kBlack)
+
+    h_model.SetLineColor(ROOT.kRed + 1)
+    h_model.SetLineWidth(2)
+
+    # Plot 1: stacked
+    c1 = ROOT.TCanvas("c_fit_stack", "fit stack", 1000, 700)
+    stack = ROOT.THStack("stack_fit", "Template fit stacked: h_{all} = #sum(a_{i} h_{i})")
+    for _, _, h, _ in comp_hists:
+        stack.Add(h)
+    stack.Draw("HIST")
+    stack.GetXaxis().SetTitle("Step deposited energy [MeV]")
+    stack.GetYaxis().SetTitle("Counts")
+    ymax = max(float(np.max(data_counts)), float(np.max(model_total)), 1.0) * 1.25
+    stack.SetMaximum(ymax)
+    h_data.Draw("E1 SAME")
+    h_model.Draw("HIST SAME")
+
+    leg1 = ROOT.TLegend(0.62, 0.52, 0.90, 0.90)
+    leg1.SetBorderSize(0)
+    leg1.SetFillStyle(0)
+    for _, label, h, _ in comp_hists:
+        leg1.AddEntry(h, h.GetTitle(), "f")
+    leg1.AddEntry(h_data, f"{data_label} data", "lep")
+    leg1.AddEntry(h_model, "sum(a_i*h_i)", "l")
+    leg1.Draw()
+    c1.SaveAs(str(out_stack_png))
+
+    # Plot 2: components overlay
+    c2 = ROOT.TCanvas("c_fit_overlay", "fit overlay", 1000, 700)
+    h_frame = make_hist("h_frame", "All data with overlaid fitted components")
+    h_frame.GetXaxis().SetTitle("Step deposited energy [MeV]")
+    h_frame.GetYaxis().SetTitle("Counts")
+    h_frame.SetMinimum(0.0)
+    h_frame.SetMaximum(ymax)
+    h_frame.Draw("HIST")
+
+    x_centers = np.asarray(0.5 * (bin_edges[:-1] + bin_edges[1:]), dtype=float)
+    y_data = np.asarray(data_counts, dtype=float)
+    g_data = ROOT.TGraph(len(x_centers), x_centers, y_data)
+    g_data.SetName("g_data_overlay")
+    g_data.SetLineColor(ROOT.kBlack)
+    g_data.SetMarkerColor(ROOT.kBlack)
+    g_data.SetMarkerStyle(20)
+    g_data.SetMarkerSize(0.8)
+    g_data.SetLineWidth(2)
+    g_data.Draw("LP SAME")
+
+    overlay_hists = []
+    overlay_graphs = []
+    for _, _, h, c in comp_hists:
+        h_line = h.Clone(f"{h.GetName()}_line")
+        h_line.SetDirectory(0)
+        # 仅用于可视化：平滑模板分量曲线，便于区分不同成分
+        h_line.Smooth(1)
+        overlay_hists.append(h_line)
+        y_vals = np.asarray([h_line.GetBinContent(i + 1) for i in range(len(x_centers))], dtype=float)
+        g = ROOT.TGraph(len(x_centers), x_centers, y_vals)
+        g.SetName(f"g_{h.GetName()}_line")
+        g.SetLineColor(c)
+        g.SetLineWidth(2)
+        g.Draw("L SAME")
+        overlay_graphs.append(g)
+
+    g_model = ROOT.TGraph(len(x_centers), x_centers, np.asarray(model_total, dtype=float))
+    g_model.SetName("g_model_overlay")
+    g_model.SetLineColor(ROOT.kRed + 1)
+    g_model.SetLineWidth(3)
+    g_model.Draw("L SAME")
+
+    leg2 = ROOT.TLegend(0.62, 0.52, 0.90, 0.90)
+    leg2.SetBorderSize(0)
+    leg2.SetFillStyle(0)
+    leg2.AddEntry(g_data, f"{data_label} data", "lp")
+    legend_hists = []
+    for _, _, h, c in comp_hists:
+        h_line = h.Clone(f"{h.GetName()}_leg")
+        h_line.SetDirectory(0)
+        h_line.Smooth(1)
+        h_line.SetFillStyle(0)
+        h_line.SetLineColor(c)
+        h_line.SetLineWidth(2)
+        leg2.AddEntry(h_line, h.GetTitle(), "l")
+        legend_hists.append(h_line)
+    leg2.AddEntry(g_model, "sum(a_i*h_i)", "l")
+    leg2.Draw()
+    c2.Update()
+    c2.SaveAs(str(out_comp_png))
 
 
 def main():
@@ -183,7 +420,6 @@ def main():
 
     add_local_dependency_paths(project_root)
     import templatefitter as tf
-    import matplotlib.pyplot as plt
     import numpy as np
 
     cache_dir = project_root / "input" / "_cache_step_energy_mev"
@@ -195,7 +431,6 @@ def main():
             "Expected names like 1_0__1_1.root (two underscore-decimal tokens separated by __)."
         )
 
-    bins = FIT_BINS
     fit_range = (FIT_EMIN_MEV, FIT_EMAX_MEV)
     channel_name = "xray"
     observable = "energy_MeV"
@@ -203,13 +438,29 @@ def main():
     # 动态创建 process，按文件名排序后的顺序绑定
     processes = [f"p{i}" for i in range(len(template_files))]
     process_labels = [f.name for f in template_files]
-    colors = plt.cm.tab10(np.linspace(0, 1, len(template_files)))
+    colors = [f"C{i % 10}" for i in range(len(template_files))]
 
-    templates = {}
     component_raw_data = {}
-    for proc, src_file, color in zip(processes, template_files, colors):
+    for proc, src_file in zip(processes, template_files):
         data_mev = load_step_energy_mev(src_file, cache_dir)
         component_raw_data[proc] = data_mev
+
+    bins, template_support, low_support_frac = pick_stable_bin_count(
+        [component_raw_data[p] for p in processes],
+        fit_range,
+        FIT_BINS,
+        args.min_template_support,
+        args.min_bins,
+    )
+    print(
+        f"adaptive bins: {FIT_BINS} -> {bins}, "
+        f"low-support-bin fraction: {low_support_frac * 100:.2f}% "
+        f"(threshold<{args.min_template_support})"
+    )
+
+    templates = {}
+    for proc, src_file, color in zip(processes, template_files, colors):
+        data_mev = component_raw_data[proc]
         h = tf.histograms.Hist1d(bins, fit_range, data=data_mev)
         templates[proc] = tf.templates.Template1d(proc, observable, h, color=color)
 
@@ -224,11 +475,11 @@ def main():
     h_data = tf.histograms.Hist1d(bins, fit_range, data=data_mev)
     mct.add_data(**{channel_name: h_data})
 
-    fitter = tf.TemplateFitter(mct, "scipy")
+    fitter = tf.TemplateFitter(mct, "iminuit")
     yield_max = float(len(data_mev))
     for proc in processes:
         fitter.set_parameter_bounds(f"{proc}_yield", (0.0, yield_max))
-    result = fitter.do_fit(update_templates=False, get_hesse=False, verbose=0)
+    result = fitter.do_fit(update_templates=True, get_hesse=True, verbose=0, fix_nui_params=True)
 
     # 按 h_all = sum(a_i * h_i) 计算可视化
     bin_edges = np.linspace(fit_range[0], fit_range[1], bins + 1)
@@ -248,10 +499,90 @@ def main():
     for proc in processes:
         model_total += component_scaled_counts[proc]
 
+    # Validation following TemplateFitter example patterns:
+    # 1) GOF tests (Pearson and binned likelihood based)
+    # 2) Optional profile likelihood scan for one process
+    valid = np.asarray(model_total, dtype=float) > 1e-12
+    dof = max(int(valid.sum()) - len(processes), 1)
+    pearson_chi2 = float("nan")
+    pearson_chi2_ndof = float("nan")
+    pearson_p = float("nan")
+    cowan_chi2 = float("nan")
+    cowan_chi2_ndof = float("nan")
+    cowan_p = float("nan")
+    if np.any(valid):
+        data_valid = np.asarray(data_counts, dtype=float)[valid]
+        model_valid = np.asarray(model_total, dtype=float)[valid]
+        pearson_chi2, pearson_chi2_ndof, pearson_p = tf.pearson_chi2_test(
+            data_valid, model_valid, dof
+        )
+        cowan_chi2, cowan_chi2_ndof, cowan_p = tf.cowan_binned_likelihood_gof(
+            data_valid, model_valid, dof
+        )
+
+    profile_result = None
+    significance_result = None
+    if args.validate_profile and len(processes) > 0:
+        prof_proc = processes[0]
+        try:
+            profile_points, profile_nll, profile_hesse = fitter.profile(
+                f"{prof_proc}_yield",
+                num_cpu=max(1, int(args.profile_cpu)),
+                num_points=max(5, int(args.profile_points)),
+                sigma=float(args.profile_sigma),
+                fix_nui_params=True,
+            )
+            profile_result = (prof_proc, profile_points, profile_nll, profile_hesse)
+        except Exception as exc:
+            profile_result = ("ERROR", str(exc))
+        try:
+            significance_result = fitter.get_significance(prof_proc, verbose=False, fix_nui_params=True)
+        except Exception as exc:
+            significance_result = f"ERROR: {exc}"
+
+    pull_stats = None
+    if args.toy_pull and len(processes) > 0:
+        pull_proc = processes[0]
+        try:
+            toys = tf.ToyStudy(mct, "iminuit")
+            toys.do_experiments(
+                n_exp=max(1, int(args.toy_nexp)),
+                max_tries=max(1, int(args.toy_max_tries)),
+            )
+            pulls = np.asarray(toys.get_toy_result_pulls(pull_proc), dtype=float)
+            pulls = pulls[np.isfinite(pulls)]
+            pull_mean = float(np.mean(pulls)) if pulls.size > 0 else float("nan")
+            pull_sigma = float(np.std(pulls)) if pulls.size > 0 else float("nan")
+            pull_stats = (pull_proc, pull_mean, pull_sigma, pulls)
+        except Exception as exc:
+            pull_stats = ("ERROR", str(exc), None, None)
+
     print("\n=== Fit Result ===")
     print("success:", result.succes)
     print("fcn_min_val:", result.fcn_min_val)
     print("data file:", data_file.name)
+    print(f"pearson chi2/ndof: {pearson_chi2:.6g}/{dof} = {pearson_chi2_ndof:.6g}, p={pearson_p:.4g}")
+    print(f"cowan   chi2/ndof: {cowan_chi2:.6g}/{dof} = {cowan_chi2_ndof:.6g}, p={cowan_p:.4g}")
+    if significance_result is not None:
+        print(f"significance({processes[0]}): {significance_result}")
+    if profile_result is not None:
+        if profile_result[0] == "ERROR":
+            print(f"profile validation failed: {profile_result[1]}")
+        else:
+            proc_name, p_points, p_nll, p_hesse = profile_result
+            print(
+                f"profile validation done for {proc_name}: "
+                f"{len(p_points)} points, finite(profile)={np.isfinite(p_nll).all()}"
+            )
+    if pull_stats is not None:
+        if pull_stats[0] == "ERROR":
+            print(f"pull validation failed: {pull_stats[1]}")
+        else:
+            pull_proc, pull_mean, pull_sigma, _ = pull_stats
+            print(
+                f"pull({pull_proc}) mean/sigma: {pull_mean:.6f}/{pull_sigma:.6f} "
+                "(ideal: 0 / 1)"
+            )
     if skipped_files:
         print("skipped non-template files:", ", ".join(skipped_files))
 
@@ -279,55 +610,59 @@ def main():
             writer.writerow([file_label, f"{yld:.6f}", f"{pct:.2f}"])
     print("saved csv:", csv_path)
 
-    # 图1：堆叠
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-    bin_width = bin_edges[1] - bin_edges[0]
-    fig_stack, ax_stack = plt.subplots(1, 1, figsize=(9, 6), dpi=150)
-    running_bottom = np.zeros_like(model_total)
-    for proc, label, color in zip(processes, process_labels, colors):
-        vals = component_scaled_counts[proc]
-        ax_stack.bar(
-            bin_centers,
-            vals,
-            width=bin_width,
-            bottom=running_bottom,
-            color=color,
-            alpha=0.55,
-            edgecolor="none",
-            label=f"{label} (a={fitted_yields[proc]:.2f})",
-            align="center",
-        )
-        running_bottom += vals
-    ax_stack.step(bin_edges[:-1], data_counts, where="post", color="black", lw=1.5, label=f"{data_file.name} data")
-    ax_stack.step(bin_edges[:-1], model_total, where="post", color="crimson", lw=1.5, label="sum(a_i*h_i)")
-    ax_stack.set_xlabel("Step deposited energy [MeV]")
-    ax_stack.set_ylabel("Counts")
-    ax_stack.set_title("Template fit stacked: h_all = sum(a_i * h_i)")
-    ax_stack.legend()
     out_stack_png = template_dir / "fit_to_all_stacked.png"
-    fig_stack.savefig(out_stack_png, bbox_inches="tight")
-    print("saved plot:", out_stack_png)
-
-    # 图2：分量叠加
-    fig_comp, ax_comp = plt.subplots(1, 1, figsize=(10, 7), dpi=150)
-    ax_comp.step(bin_edges[:-1], data_counts, where="post", color="black", lw=1.8, label=f"{data_file.name} data")
-    for proc, label, color in zip(processes, process_labels, colors):
-        ax_comp.step(
-            bin_edges[:-1],
-            component_scaled_counts[proc],
-            where="post",
-            color=color,
-            lw=1.4,
-            label=f"{label} (a={fitted_yields[proc]:.2f})",
-        )
-    ax_comp.step(bin_edges[:-1], model_total, where="post", color="crimson", lw=1.8, label="sum(a_i*h_i)")
-    ax_comp.set_title("All data with overlaid fitted components")
-    ax_comp.set_xlabel("Step deposited energy [MeV]")
-    ax_comp.set_ylabel("Counts")
-    ax_comp.legend(loc="upper right")
     out_comp_png = template_dir / "fit_to_all_components_overlay.png"
-    fig_comp.savefig(out_comp_png, bbox_inches="tight")
+    draw_plots_with_root(
+        bin_edges=bin_edges,
+        data_counts=data_counts,
+        model_total=model_total,
+        component_scaled_counts=component_scaled_counts,
+        processes=processes,
+        process_labels=process_labels,
+        fitted_yields=fitted_yields,
+        data_label=data_file.name,
+        out_stack_png=out_stack_png,
+        out_comp_png=out_comp_png,
+    )
+    print("saved plot:", out_stack_png)
     print("saved plot:", out_comp_png)
+
+    if pull_stats is not None and pull_stats[0] != "ERROR":
+        import ROOT
+
+        pull_proc, pull_mean, pull_sigma, pulls = pull_stats
+        if pulls.size > 0:
+            ROOT.gROOT.SetBatch(True)
+            ROOT.gStyle.SetOptStat(1110)
+            c_pull = ROOT.TCanvas("c_fit_pull", "fit pull", 900, 650)
+            h_pull = ROOT.TH1D(
+                "h_fit_pull",
+                f"Pull distribution ({pull_proc});pull;Entries",
+                60,
+                -5.0,
+                5.0,
+            )
+            h_pull.SetDirectory(0)
+            for v in pulls:
+                h_pull.Fill(float(v))
+            h_pull.SetLineColor(ROOT.kBlue + 1)
+            h_pull.SetLineWidth(2)
+            h_pull.Draw("HIST")
+
+            line0 = ROOT.TLine(0.0, 0.0, 0.0, h_pull.GetMaximum() * 1.05)
+            line0.SetLineColor(ROOT.kRed + 1)
+            line0.SetLineStyle(2)
+            line0.Draw()
+
+            text = ROOT.TLatex()
+            text.SetNDC(True)
+            text.SetTextSize(0.035)
+            text.DrawLatex(0.58, 0.86, f"mean = {pull_mean:.4f}")
+            text.DrawLatex(0.58, 0.81, f"sigma = {pull_sigma:.4f}")
+
+            out_pull_png = template_dir / args.pull_png
+            c_pull.SaveAs(str(out_pull_png))
+            print("saved plot:", out_pull_png)
 
 
 if __name__ == "__main__":

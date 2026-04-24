@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--step",
-        default="1",
+        default="0.1",
         help="Window width and stride [MeV]. Pairs: (E, E+step).",
     )
     parser.add_argument(
@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--n-events",
-        default="1000000",
+        default="10000000",
         help="Value for /run/beamOn in each macro.",
     )
     parser.add_argument(

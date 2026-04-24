@@ -16,9 +16,9 @@
 # /mydet/setSpectrumMaxEnergy 700 keV
 
 
-# /mydet/setSource XrayTube
+/mydet/setSource XrayTube
 
 ########################################
 # 设置事件数，开始运行
-/run/beamOn 100000000
+/run/beamOn 1000000
 ########################################

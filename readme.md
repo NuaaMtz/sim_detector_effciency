@@ -57,3 +57,6 @@
 /mydet/setSpectrumMinEnergy 500 keV
 /mydet/setSpectrumMaxEnergy 700 keV
 ``
+
+2026-4-20： 实现上述功能
+

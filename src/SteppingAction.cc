@@ -66,10 +66,10 @@ void SteppingAction::UserSteppingAction(const G4Step *step) {
     return;
   }
 
-  // // 只有 XrayTube 模式才按标记筛选；其他放射源保持原逻辑
-  // if (isXrayTubeMode && !IsTaggedTrack(track)) {
-  //   return;
-  // }
+  // 只有 XrayTube 模式才按标记筛选；其他放射源保持原逻辑
+  if (isXrayTubeMode && !IsTaggedTrack(track)) {
+    return;
+  }
 
   // 在EventAction中累积，EndOfEventAction统一写入一次
   feventAction->AddEdep(edep);
